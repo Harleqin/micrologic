@@ -19,6 +19,7 @@
 (defun make-substitution-map ()
   (fset:empty-map))
 
+;; TODO: check for cycles
 (defun add-substitution (smap lvar value)
   (when smap
     (fset:with smap lvar value)))
@@ -31,8 +32,18 @@
         (walk val smap)
         lvar)))
 
-(defmethod walk ((u t) smap)
+(defmethod walk (u smap)
   u)
 
-(defmethod walk ((u null) smap)
+(defun unify (u v smap)
+  (let ((u (walk u smap))
+        (v (walk v smap)))
+    (cond ((fset:equal? u v) smap)
+          ((lvar-p u) (add-substitution smap u v))
+          ((lvar-p v) (add-substitution smap v u))
+          (t (unify-terms u v smap)))))
+
+(defgeneric unify-terms (u v smap))
+
+(defmethod unify-terms (u v smap)
   nil)
