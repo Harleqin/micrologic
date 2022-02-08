@@ -47,3 +47,65 @@
 
 (defmethod unify-terms (u v smap)
   nil)
+
+;;; Lazy Streams
+
+(defstruct lazy-stream)
+
+(defstruct (empty-stream (:include lazy-stream)))
+
+(defstruct (mature-stream (:include lazy-stream))
+  head
+  next)
+
+(defstruct (immature-stream (:include lazy-stream))
+  thunk)
+
+(defgeneric merge-streams (a b))
+
+(defgeneric mapcat-stream (stream function))
+
+(defgeneric realize-stream-head (stream))
+
+(defmethod merge-streams ((a empty-stream) (b lazy-stream))
+  b)
+
+(defmethod mapcat-stream ((s empty-stream) (f function))
+  s)
+
+(defparameter +empty-stream+
+  (make-empty-stream))
+
+(defmethod realize-stream-head ((s empty-stream))
+  s)
+
+(defmethod merge-streams ((a mature-stream) (b lazy-stream))
+  (make-mature-stream :head (mature-stream-head a)
+                      :next (merge-streams (mature-stream-next a)
+                                           b)))
+
+(defmethod mapcat-stream ((s mature-stream) (f function))
+  (merge-streams (funcall f (mature-stream-head s))
+                 (mapcat-stream (mature-stream-next s) f)))
+
+(defmethod realize-stream-head ((s mature-stream))
+  s)
+
+(defun make-stream (s)
+  (make-mature-stream :head s
+                      :next +empty-stream+))
+
+(defmethod merge-streams ((a immature-stream) (b lazy-stream))
+  (make-immature-stream
+   :thunk (lambda ()
+            (merge-streams b
+                           (funcall (immature-stream-thunk a))))))
+
+(defmethod mapcat-stream ((s immature-stream) (f function))
+  (make-immature-stream
+   :thunk (lambda ()
+            (mapcat-stream (funcall (immature-stream-thunk s))
+                           f))))
+
+(defmethod realize-stream-head ((s immature-stream))
+  (realize-stream-head (funcall (immature-stream-thunk s))))
