@@ -50,16 +50,7 @@
 
 ;;; Lazy Streams
 
-(defstruct lazy-stream)
-
-(defstruct (empty-stream (:include lazy-stream)))
-
-(defstruct (mature-stream (:include lazy-stream))
-  head
-  next)
-
-(defstruct (immature-stream (:include lazy-stream))
-  thunk)
+;; A lazy stream is a thunk or a list whose last cdr may be a thunk or nil.
 
 (defgeneric merge-streams (a b))
 
@@ -67,48 +58,38 @@
 
 (defgeneric realize-stream-head (stream))
 
-(defmethod merge-streams ((a empty-stream) (b lazy-stream))
+(defmethod merge-streams ((a null) b)
   b)
 
-(defmethod mapcat-stream ((s empty-stream) (f function))
+(defmethod mapcat-stream ((s null) (f function))
   s)
 
-(defparameter +empty-stream+
-  (make-empty-stream))
-
-(defmethod realize-stream-head ((s empty-stream))
+(defmethod realize-stream-head ((s null))
   s)
 
-(defmethod merge-streams ((a mature-stream) (b lazy-stream))
-  (make-mature-stream :head (mature-stream-head a)
-                      :next (merge-streams (mature-stream-next a)
-                                           b)))
+(defmethod merge-streams ((a cons) b)
+  (cons (car a)
+        (merge-streams (cdr a) b)))
 
-(defmethod mapcat-stream ((s mature-stream) (f function))
-  (merge-streams (funcall f (mature-stream-head s))
-                 (mapcat-stream (mature-stream-next s) f)))
+(defmethod mapcat-stream ((s cons) (f function))
+  (merge-streams (funcall f (car s))
+                 (mapcat-stream (cdr s) f)))
 
-(defmethod realize-stream-head ((s mature-stream))
+(defmethod realize-stream-head ((s cons))
   s)
 
-(defun make-stream (s)
-  (make-mature-stream :head s
-                      :next +empty-stream+))
+(defmethod merge-streams ((a function) b)
+  (lambda ()
+    (merge-streams b
+                   (funcall a))))
 
-(defmethod merge-streams ((a immature-stream) (b lazy-stream))
-  (make-immature-stream
-   :thunk (lambda ()
-            (merge-streams b
-                           (funcall (immature-stream-thunk a))))))
+(defmethod mapcat-stream ((s function) (f function))
+  (lambda ()
+    (mapcat-stream (funcall s)
+                   f)))
 
-(defmethod mapcat-stream ((s immature-stream) (f function))
-  (make-immature-stream
-   :thunk (lambda ()
-            (mapcat-stream (funcall (immature-stream-thunk s))
-                           f))))
-
-(defmethod realize-stream-head ((s immature-stream))
-  (realize-stream-head (funcall (immature-stream-thunk s))))
+(defmethod realize-stream-head ((s function))
+  (realize-stream-head (funcall s)))
 
 ;;; Goals
 
@@ -124,17 +105,23 @@
   (make-state :s-map (state-s-map state)
               :next-id next-id))
 
+;; A goal is a function from a state to a stream of solutions.  A goal
+;; constructor is a function that returns a goal.
+
 (defun === (u v)
   (lambda (state)
     (let ((new-s-map (unify u v (state-s-map state))))
       (if new-s-map
-          (make-stream (with-s-map state new-s-map))
-          +empty-stream+))))
+          (list (with-s-map state new-s-map))
+          nil))))
 
 (defun call-fresh (goal-constructor)
   (lambda (state)
-    (let ((goal (funcall goal-constructor (lvar (state-next-id state)))))
-      (funcall goal (with-next-id state (1+ (state-next-id state)))))))
+    (let ((goal (funcall goal-constructor
+                         (lvar (state-next-id state)))))
+      (funcall goal
+               (with-next-id state
+                 (1+ (state-next-id state)))))))
 
 (defun ldisj (goal-1 goal-2)
   (lambda (state)
@@ -151,8 +138,8 @@
 (defmacro delay-goal (goal)
   (let ((state (gensym "STATE")))
     `(lambda (,state)
-       (make-immature-stream :thunk (lambda ()
-                                      (funcall ,goal ,state))))))
+       (lambda ()
+         (funcall ,goal ,state)))))
 
 (defmacro ldisj+ (goal &rest more-goals)
   (if more-goals
