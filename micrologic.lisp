@@ -109,3 +109,103 @@
 
 (defmethod realize-stream-head ((s immature-stream))
   (realize-stream-head (funcall (immature-stream-thunk s))))
+
+;;; Goals
+
+(defstruct state
+  (s-map (make-substitution-map))
+  (next-id 0))
+
+(defun with-s-map (state s-map)
+  (make-state :s-map s-map
+              :next-id (state-next-id state)))
+
+(defun with-next-id (state next-id)
+  (make-state :s-map (state-s-map state)
+              :next-id next-id))
+
+(defun === (u v)
+  (lambda (state)
+    (let ((new-s-map (unify u v (state-s-map state))))
+      (if new-s-map
+          (make-stream (with-s-map state new-s-map))
+          +empty-stream+))))
+
+(defun call-fresh (goal-constructor)
+  (lambda (state)
+    (let ((goal (funcall goal-constructor (lvar (state-next-id state)))))
+      (funcall goal (with-next-id state (1+ (state-next-id state)))))))
+
+(defun ldisj (goal-1 goal-2)
+  (lambda (state)
+    (merge-streams (funcall goal-1 state)
+                   (funcall goal-2 state))))
+
+(defun lconj (goal-1 goal-2)
+  (lambda (state)
+    (mapcat-stream (funcall goal-1 state)
+                   goal-2)))
+
+;;; Sugar
+
+(defmacro delay-goal (goal)
+  (let ((state (gensym "STATE")))
+    `(lambda (,state)
+       (make-immature-stream :thunk (lambda ()
+                                      (funcall ,goal ,state))))))
+
+(defmacro ldisj+ (goal &rest more-goals)
+  (if more-goals
+      `(ldisj (delay-goal ,goal)
+              (ldisj+ ,@more-goals))
+      `(delay-goal ,goal)))
+
+(defmacro lconj+ (goal &rest more-goals)
+  (if more-goals
+      `(lconj (delay-goal ,goal)
+              (lconj+ ,@more-goals))
+      `(delay-goal ,goal)))
+
+;;; Reification
+
+(defun reify-name (n)
+  (intern (format nil "_.~a" n) '#:keyword))
+
+(defun reify-s (v s-map)
+  (reify-s* (walk v s-map) s-map))
+
+(defgeneric reify-s* (v s-map))
+
+(defmethod reify-s* (v s-map)
+  s-map)
+
+(defmethod reify-s* ((v lvar) s-map)
+  (add-substitution s-map
+                    v
+                    (reify-name (fset:size s-map))))
+
+(defun deep-walk (v s-map)
+  (deep-walk* (walk v s-map) s-map))
+
+(defgeneric deep-walk* (v s-map))
+
+(defmethod deep-walk* (v s-map)
+  v)
+
+(defun reify-state-first-var (state)
+  (let ((v (deep-walk (lvar 0) (state-s-map state))))
+    (deep-walk v (reify-s v (make-substitution-map)))))
+
+;;; Programmer interface
+
+(defmacro conde (&body clauses)
+  `(ldisj+ ,@(mapcar (lambda (clause)
+                       `(lconj+ ,@clause))
+                     clauses)))
+
+(defmacro fresh (vars &body clauses)
+  (if (endp vars)
+      `(lconj+ ,@clauses)
+      `(call-fresh (lambda (,(first vars))
+                     (fresh ,(rest vars)
+                            ,@clauses)))))
