@@ -259,3 +259,25 @@
 (defmethod deep-walk* ((v cons) smap)
   (cons (deep-walk (car v) smap)
         (deep-walk (cdr v) smap)))
+
+(defun conso (car cdr out)
+  (=== (cons car cdr) out))
+
+(defun caro (car out)
+  (fresh (cdr)
+    (conso car cdr out)))
+
+(defun cdro (cdr out)
+  (fresh (car)
+    (conso car cdr out)))
+
+(defun emptyo (out)
+  (=== '() out))
+
+(defun appendo (l0 l1 out)
+  (conde
+    ((emptyo l0) (=== l1 out))
+    ((fresh (car cdr rec)
+       (conso car cdr l0)
+       (conso car rec out)
+       (appendo cdr l1 rec)))))
