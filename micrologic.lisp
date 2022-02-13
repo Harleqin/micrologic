@@ -1,9 +1,9 @@
 (in-package cl-user)
 
-(ql-require "fset")
+(ql-require "arrows" "fset")
 
 (defpackage micrologic
-  (:use cl))
+  (:use arrows cl))
 
 (in-package micrologic)
 
@@ -91,7 +91,7 @@
 (defmethod realize-stream-head ((s function))
   (realize-stream-head (funcall s)))
 
-;;; Goals
+;;; State and Goals
 
 (defstruct state
   (s-map (make-substitution-map))
@@ -104,6 +104,9 @@
 (defun with-next-id (state next-id)
   (make-state :s-map (state-s-map state)
               :next-id next-id))
+
+(defparameter +empty-state+
+  (make-state))
 
 ;; A goal is a function from a state to a stream of solutions.  A goal
 ;; constructor is a function that returns a goal.
@@ -196,3 +199,63 @@
       `(call-fresh (lambda (,(first vars))
                      (fresh ,(rest vars)
                             ,@clauses)))))
+
+(defun call-empty-state (goal)
+  (funcall goal +empty-state+))
+
+(defmacro run* (vars &body goals)
+  `(->> (fresh ,vars ,@goals)
+        call-empty-state
+        (map-stream #'reify-state-first-var)))
+
+(defgeneric map-stream (f stream))
+
+(defmethod map-stream (f (stream null))
+  nil)
+
+(defmethod map-stream (f (stream cons))
+  (lambda ()
+    (cons (funcall f (car stream))
+          (map-stream f (cdr stream)))))
+
+(defmethod map-stream (f (stream function))
+  (lambda ()
+    (map-stream f (realize-stream-head stream))))
+
+(defgeneric stream-take (n stream))
+
+(defmethod stream-take ((n (eql 0)) stream)
+  nil)
+
+(defmethod stream-take (n (stream null))
+  nil)
+
+(defmethod stream-take (n (stream cons))
+  (when (plusp n)
+    (cons (car stream)
+          (stream-take (1- n) (cdr stream)))))
+
+(defmethod stream-take (n (stream function))
+  (when (plusp n)
+    (stream-take n (realize-stream-head stream))))
+
+(defmacro run (n vars &body clauses)
+  `(stream-take ,n (run* ,vars ,@clauses)))
+
+;;; Extending to other collections
+
+;; Conses
+
+(defmethod unify-terms ((u cons) (v cons) smap)
+  (->> smap
+       (unify (car u) (car v))
+       (unify (cdr u) (cdr v))))
+
+(defmethod reify-s* ((v cons) smap)
+  (->> smap
+       (reify-s (car v))
+       (reify-s (cdr v))))
+
+(defmethod deep-walk* ((v cons) smap)
+  (cons (deep-walk (car v) smap)
+        (deep-walk (cdr v) smap)))
