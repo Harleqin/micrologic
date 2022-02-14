@@ -1,0 +1,8 @@
+* Micrologic
+
+A Common Lisp port of a Clojure micro-kanren implementation
+at https://mullr.github.io/micrologic/literate.html.
+
+* State
+
+Experimental, no exports.  There are fledged out alternatives in Quicklisp, use those.
