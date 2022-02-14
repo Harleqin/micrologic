@@ -48,7 +48,14 @@
 
 ;;; Lazy Streams
 
-;; A lazy stream is a thunk or a list whose last cdr may be a thunk or nil.
+;; A lazy stream is
+;; - nil,
+;; - a cons whose cdr is a lazy stream, or
+;; - a thunk that returns a lazy stream.
+
+;; This is not memoizing, so if you read such a stream again, its thunks will
+;; all be re-evaluated.  In the use case here, streams seem mostly single-use,
+;; so it should be OK…
 
 (defgeneric merge-streams (a b))
 
@@ -240,7 +247,7 @@
 (defmacro run (n vars &body clauses)
   `(stream-take ,n (run* ,vars ,@clauses)))
 
-;;; Extending to other collections
+;;; Extending to collections
 
 ;; Conses
 
