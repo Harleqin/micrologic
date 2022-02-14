@@ -1,7 +1,5 @@
 (in-package cl-user)
 
-(ql-require "arrows" "fset")
-
 (defpackage micrologic
   (:use arrows cl))
 
